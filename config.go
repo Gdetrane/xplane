@@ -7,16 +7,18 @@ import (
 	"strings"
 )
 
-const defaultCommands = "git_status,git_log,readme,github_prs,tokei,ripsecrets"
+const defaultCommands = "git_status,git_log,readme,github_prs,release,git_branch_status,tokei,ripsecrets"
 
 var specialCommandToBinMap = map[string]string{
-	"git_status": "git",
-	"git_log":    "git",
-	"tokei":      "tokei",
-	"ripsecrets": "ripsecrets",
-	"github_prs": "",
-	"gitlab_mrs": "",
-	"readme":     "",
+	"git_status":        "git",
+	"git_log":           "git",
+	"tokei":             "tokei",
+	"ripsecrets":        "ripsecrets",
+	"github_prs":        "",
+	"gitlab_mrs":        "",
+	"git_branch_status": "",
+	"release":           "",
+	"readme":            "",
 }
 
 type Config struct {

@@ -57,6 +57,56 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 				output = string(readmeBytes)
 			}
 
+		case "release":
+		  provider, err := initGitProvider()
+			if err != nil {
+				return "", fmt.Errorf("failed to initialize git provider: %v", err)
+			}
+			primaryURL, urlErr := findPrimaryRemoteRepoURL(gitRoot)
+			if urlErr != nil {
+				return "", urlErr
+			}
+
+			owner, repo, parseErr := parseGitURL(primaryURL)
+			if parseErr != nil {
+				return "", parseErr
+			}
+		  release, releaseErr := provider.GetLatestRelease(owner, repo)
+		  if releaseErr != nil {
+		  	return "", releaseErr
+		  }
+		  output = formatReleaseInfo(release)
+		  
+		case "git_branch_status":
+			// checking that the local branch has remote tracking first
+			if !hasRemoteTrackingBranch(gitRoot) {
+				output = "Local branch has not been pushed to the remote."
+				break
+			}
+		  provider, err := initGitProvider()
+			if err != nil {
+				return "", fmt.Errorf("failed to initialize git provider: %v", err)
+			}
+			primaryURL, urlErr := findPrimaryRemoteRepoURL(gitRoot)
+			if urlErr != nil {
+				return "", urlErr
+			}
+
+			owner, repo, parseErr := parseGitURL(primaryURL)
+			if parseErr != nil {
+				return "", parseErr
+			}
+			localBranch, localBranchErr := runCommand(gitRoot, "git", "branch", "--show-current")
+			if localBranchErr != nil {
+				return "", localBranchErr
+			}
+			localBranch = strings.TrimSpace(localBranch)
+		  branchComparison, branchComparisonErr := provider.CompareBranchWithDefault(owner, repo, localBranch)
+		  if branchComparisonErr != nil {
+		  	return "", branchComparisonErr
+		  }
+		  output = formatBranchComparison(branchComparison)
+
 		case "github_prs", "gitlab_mrs":
 			provider, err := initGitProvider()
 			if err != nil {
