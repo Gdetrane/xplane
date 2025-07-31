@@ -46,6 +46,13 @@ func findPrimaryRemoteRepoURL(gitRoot string) (string, error) {
 	return strings.TrimSpace(originURL), nil
 }
 
+// checks if the current git branch is tracking a remote branch.
+func hasRemoteTrackingBranch(gitRoot string) bool {
+	// fails if there is no upstream branch configured
+	_, err := runCommand(gitRoot, "git", "rev-parse", "--abbrev-ref", "@{u}")
+	return err == nil
+}
+
 // returns a struct that implements the GitProvider interface, for the supported remote git providers (github, gitlab, etc)
 func getGitProvider(gitRoot string, cfg *Config) (GitProvider, error) {
 	remote, err := findPrimaryRemoteRepoURL(gitRoot)
@@ -90,6 +97,28 @@ func formatPRS(prs []PullRequest) string {
 	output := prBuilder.String()
 	if output == "" {
 		output = "No open pull/merge requests found."
+	}
+
+	return output
+}
+
+func formatReleaseInfo(release Release) string {
+	var relBuilder strings.Builder
+	relBuilder.WriteString(fmt.Sprintf("Release: %s@%s\n  URL: %s\n\n  Published: %s", release.Name, release.TagName, release.URL, release.PublishedAt))
+	output := relBuilder.String()
+	if output == "" {
+		output = "No release info found."
+	}
+
+	return output
+}
+
+func formatBranchComparison(branchComparison BranchComparison) string {
+	var compBuilder strings.Builder
+	compBuilder.WriteString(fmt.Sprintf("Local branch vs main branch:\n  Status: %s\n  AheadBy: %s\n  BehindBy:  %s\n", branchComparison.Status, branchComparison.AheadBy, branchComparison.BehindBy))
+	output := compBuilder.String()
+	if output == "" {
+		output = "No branch comparison info found."
 	}
 
 	return output

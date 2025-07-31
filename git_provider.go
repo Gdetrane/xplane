@@ -22,15 +22,13 @@ func parseGitURL(url string) (owner string, repo string, err error) {
 	owner = matches[1]
 	repo = matches[2]
 
-	if len(matches) < 3 {
-		return "", "", fmt.Errorf("could not parse owner and repo from url: %s", url)
-	}
-
 	return owner, repo, nil
 }
 
 type GitProvider interface {
 	GetOpenPullRequests(owner, repo string) ([]PullRequest, error)
+	GetLatestRelease(owner, repo string) (Release, error)
+	CompareBranchWithDefault(owner, repo, localBranch string) (BranchComparison, error)
 }
 
 type GithubProvider struct {
@@ -46,13 +44,57 @@ func (g *GithubProvider) GetOpenPullRequests(owner, repo string) ([]PullRequest,
 	var results []PullRequest
 	for _, pr := range prs {
 		results = append(results, PullRequest{
-			Title: pr.GetTitle(),
-			Author: pr.GetUser().GetLogin(),
+			Title:       pr.GetTitle(),
+			Author:      pr.GetUser().GetLogin(),
 			Description: pr.GetBody(),
-			URL: pr.GetHTMLURL(),
+			URL:         pr.GetHTMLURL(),
 		})
 	}
 	return results, nil
+}
+
+func (g *GithubProvider) GetLatestRelease(owner, repo string) (Release, error) {
+	release, _, err := g.client.Repositories.GetLatestRelease(context.Background(), owner, repo)
+	if err != nil {
+		if _, ok := err.(*github.ErrorResponse); ok && err.(*github.ErrorResponse).Response.StatusCode >= 400 {
+			// no release would get a 4xx, but this is not an issue and can be handled gracefully with relevant context
+			return Release{TagName: "No releases found"}, nil
+		}
+		return Release{}, fmt.Errorf("xplane: error fetching latest release from Github: %v", err)
+	}
+
+	return Release{
+		TagName:     release.GetTagName(),
+		Name:        release.GetName(),
+		URL:         release.GetHTMLURL(),
+		PublishedAt: release.GetPublishedAt().Format("Sat, Nov 4, 1995"),
+	}, nil
+}
+
+func (g *GithubProvider) CompareBranchWithDefault(owner, repo, localBranch string) (BranchComparison, error) {
+	// finding repo's default branch
+	repoInfo, _, err := g.client.Repositories.Get(context.Background(), owner, repo)
+	if err != nil {
+		return BranchComparison{}, fmt.Errorf("xplane: could not get repo info for default branch: %v", err)
+	}
+	defaultBranch := repoInfo.GetDefaultBranch()
+
+	// obv not comparing to itself
+	if localBranch == defaultBranch {
+		return BranchComparison{Status: "identical"}, nil
+	}
+
+  // comparing the HEAD of local branch and default branch
+	comparison, _, err := g.client.Repositories.CompareCommits(context.Background(), owner, repo, defaultBranch, localBranch, nil)
+	if err != nil {
+		return BranchComparison{}, fmt.Errorf("xplane: could not compare branches: %v", err)
+	}
+
+	return BranchComparison{
+		AheadBy: comparison.GetAheadBy(),
+		BehindBy: comparison.GetBehindBy(),
+		Status: comparison.GetStatus(),
+	}, nil
 }
 
 type GitlabProvider struct {
@@ -79,4 +121,17 @@ type PullRequest struct {
 	Author      string
 	Description string
 	URL         string
+}
+
+type Release struct {
+	TagName     string
+	Name        string
+	URL         string
+	PublishedAt string
+}
+
+type BranchComparison struct {
+	AheadBy  int
+	BehindBy int
+	Status   string
 }

@@ -36,7 +36,7 @@ The result is a personal project assistant that can tell you things like:
 Clone this repository and build the `xplane` executable.
 
 ```sh
-git clone <your-repo-url>
+git clone https://github.com/Gdetrane/xplane
 cd xplane
 go build .
 ```
