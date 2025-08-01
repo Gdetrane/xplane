@@ -58,7 +58,7 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 			}
 
 		case "release":
-		  provider, err := initGitProvider()
+			provider, err := initGitProvider()
 			if err != nil {
 				return "", fmt.Errorf("failed to initialize git provider: %v", err)
 			}
@@ -71,19 +71,19 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 			if parseErr != nil {
 				return "", parseErr
 			}
-		  release, releaseErr := provider.GetLatestRelease(owner, repo)
-		  if releaseErr != nil {
-		  	return "", releaseErr
-		  }
-		  output = formatReleaseInfo(release)
-		  
+			release, releaseErr := provider.GetLatestRelease(owner, repo)
+			if releaseErr != nil {
+				return "", releaseErr
+			}
+			output = release.Format()
+
 		case "git_branch_status":
 			// checking that the local branch has remote tracking first
 			if !hasRemoteTrackingBranch(gitRoot) {
 				output = "Local branch has not been pushed to the remote."
 				break
 			}
-		  provider, err := initGitProvider()
+			provider, err := initGitProvider()
 			if err != nil {
 				return "", fmt.Errorf("failed to initialize git provider: %v", err)
 			}
@@ -101,11 +101,11 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 				return "", localBranchErr
 			}
 			localBranch = strings.TrimSpace(localBranch)
-		  branchComparison, branchComparisonErr := provider.CompareBranchWithDefault(owner, repo, localBranch)
-		  if branchComparisonErr != nil {
-		  	return "", branchComparisonErr
-		  }
-		  output = formatBranchComparison(branchComparison)
+			branchComparison, branchComparisonErr := provider.CompareBranchWithDefault(owner, repo, localBranch)
+			if branchComparisonErr != nil {
+				return "", branchComparisonErr
+			}
+			output = branchComparison.Format()
 
 		case "github_prs", "gitlab_mrs":
 			provider, err := initGitProvider()
@@ -128,7 +128,13 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 				return "", prErr
 			}
 
-			output = formatPRS(prs)
+			var prsBuilder strings.Builder
+
+			for _, pr := range prs {
+				prsBuilder.WriteString(pr.Format())
+			}
+			output = prsBuilder.String()
+
 		default:
 			fmt.Printf("xplane: Running generic command '%s' ...\n", trimmedCmd)
 			output, err = runCommand(gitRoot, trimmedCmd, gitRoot)

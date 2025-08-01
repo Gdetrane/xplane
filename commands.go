@@ -88,38 +88,3 @@ func getTokeiStats(gitRoot string) (string, error) {
 func getRipSecrets(gitRoot string) (string, error) {
 	return runCommand(gitRoot, "ripsecrets")
 }
-
-func formatPRS(prs []PullRequest) string {
-	var prBuilder strings.Builder
-	for _, pr := range prs {
-		prBuilder.WriteString(fmt.Sprintf("- %s (by %s)\n  URL: %s\n\n%s", pr.Title, pr.Author, pr.URL, pr.Description))
-	}
-	output := prBuilder.String()
-	if output == "" {
-		output = "No open pull/merge requests found."
-	}
-
-	return output
-}
-
-func formatReleaseInfo(release Release) string {
-	var relBuilder strings.Builder
-	relBuilder.WriteString(fmt.Sprintf("Release: %s@%s\n  URL: %s\n\n  Published: %s", release.Name, release.TagName, release.URL, release.PublishedAt))
-	output := relBuilder.String()
-	if output == "" {
-		output = "No release info found."
-	}
-
-	return output
-}
-
-func formatBranchComparison(branchComparison BranchComparison) string {
-	var compBuilder strings.Builder
-	compBuilder.WriteString(fmt.Sprintf("Local branch vs main branch:\n  Status: %s\n  AheadBy: %s\n  BehindBy:  %s\n", branchComparison.Status, branchComparison.AheadBy, branchComparison.BehindBy))
-	output := compBuilder.String()
-	if output == "" {
-		output = "No branch comparison info found."
-	}
-
-	return output
-}
