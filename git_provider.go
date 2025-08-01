@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/google/go-github/v74/github"
 	// "gitlab.com/gitlab-org/api/client-go"
@@ -84,16 +85,16 @@ func (g *GithubProvider) CompareBranchWithDefault(owner, repo, localBranch strin
 		return BranchComparison{Status: "identical"}, nil
 	}
 
-  // comparing the HEAD of local branch and default branch
+	// comparing the HEAD of local branch and default branch
 	comparison, _, err := g.client.Repositories.CompareCommits(context.Background(), owner, repo, defaultBranch, localBranch, nil)
 	if err != nil {
 		return BranchComparison{}, fmt.Errorf("xplane: could not compare branches: %v", err)
 	}
 
 	return BranchComparison{
-		AheadBy: comparison.GetAheadBy(),
+		AheadBy:  comparison.GetAheadBy(),
 		BehindBy: comparison.GetBehindBy(),
-		Status: comparison.GetStatus(),
+		Status:   comparison.GetStatus(),
 	}, nil
 }
 
@@ -116,11 +117,26 @@ func NewGitHubProvider(token string) *GithubProvider {
 	}
 }
 
+type GitEntity interface {
+	Format() string
+}
+
 type PullRequest struct {
 	Title       string
 	Author      string
 	Description string
 	URL         string
+}
+
+func (pr *PullRequest) Format() string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("- %s (by %s)\n  URL: %s\n  Body: %s\n\n", pr.Title, pr.Author, pr.URL, pr.Description))
+	output := builder.String()
+	if output == "" {
+		output = "No open pull/merge requests found."
+	}
+
+	return output
 }
 
 type Release struct {
@@ -130,8 +146,30 @@ type Release struct {
 	PublishedAt string
 }
 
+func (r *Release) Format() string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Release %s@%s\n  URL: %s\n\n  Published: %s\n", r.Name, r.TagName, r.URL, r.PublishedAt))
+	output := builder.String()
+	if output == "" {
+		output = "No release info found."
+	}
+
+	return output
+}
+
 type BranchComparison struct {
 	AheadBy  int
 	BehindBy int
 	Status   string
+}
+
+func (b *BranchComparison) Format() string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Local branch vs main branch:\n  Status: %s\n  AheadBy: %d\n  BehindBy: %d\n", b.Status, b.AheadBy, b.BehindBy))
+	output := builder.String()
+	if output == "" {
+		output = "No branch comparison info between local and remote/upstream found."
+	}
+
+	return output
 }
