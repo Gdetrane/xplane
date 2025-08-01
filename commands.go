@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -87,4 +89,17 @@ func getTokeiStats(gitRoot string) (string, error) {
 // returns potential leaked secrets
 func getRipSecrets(gitRoot string) (string, error) {
 	return runCommand(gitRoot, "ripsecrets")
+}
+
+// reads and returns README.md's content if present, or a placeholder string
+func getReadme(gitRoot string) (string, error) {
+	var output string
+	readmeBytes, readmeErr := os.ReadFile(filepath.Join(gitRoot, "README.md"))
+	if os.IsNotExist(readmeErr) {
+		output = "No README.md file provided in this project."
+	} else if readmeErr != nil {
+		return "", readmeErr
+	}
+	output = string(readmeBytes)
+	return output, nil
 }
