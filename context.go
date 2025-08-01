@@ -23,16 +23,19 @@ func createPlaceHolderContext(cfg *Config) string {
 // wraps around various special commands, as well as custom commands, to gather context for an LLM
 func gatherContext(cfg *Config, gitRoot string) (string, error) {
 	var contextBuilder strings.Builder
-	var gitProvider GitProvider
-	var gitProviderErr error
-	var gitProviderInitialized bool
 
-	initGitProvider := func() (GitProvider, error) {
-		if !gitProviderInitialized {
-			gitProvider, gitProviderErr = getGitProvider(gitRoot, cfg)
-			gitProviderInitialized = true
-		}
-		return gitProvider, gitProviderErr
+	gatherer := NewContextGatherer(gitRoot, cfg)
+
+	commandHandlersMap := map[string]func() (string, error){
+		"git_status":        func() (string, error) { return getGitStatus(gitRoot) },
+		"git_log":           func() (string, error) { return getGitLog(gitRoot, 15) },
+		"tokei":             func() (string, error) { return getTokeiStats(gitRoot) },
+		"ripsecrets":        func() (string, error) { return getRipSecrets(gitRoot) },
+		"readme":            func() (string, error) { return getReadme(gitRoot) },
+		"github_prs":        gatherer.getOpenPRS,
+		"gitlab_mrs":        gatherer.getOpenPRS,
+		"release":           gatherer.getLatestRelease,
+		"git_branch_status": gatherer.getGitBranchStatus,
 	}
 
 	for _, command := range cfg.Commands {
@@ -40,102 +43,9 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 		var err error
 		trimmedCmd := strings.TrimSpace(command)
 
-		switch trimmedCmd {
-		case "git_status":
-			output, err = getGitStatus(gitRoot)
-		case "git_log":
-			output, err = getGitLog(gitRoot, 15)
-		case "tokei":
-			output, err = getTokeiStats(gitRoot)
-		case "ripsecrets":
-			output, err = getRipSecrets(gitRoot)
-		case "readme":
-			readmeBytes, readmeErr := os.ReadFile(filepath.Join(gitRoot, "README.md"))
-			if os.IsNotExist(readmeErr) {
-				output = "No README.md file provided in this project."
-			} else {
-				output = string(readmeBytes)
-			}
-
-		case "release":
-			provider, err := initGitProvider()
-			if err != nil {
-				return "", fmt.Errorf("failed to initialize git provider: %v", err)
-			}
-			primaryURL, urlErr := findPrimaryRemoteRepoURL(gitRoot)
-			if urlErr != nil {
-				return "", urlErr
-			}
-
-			owner, repo, parseErr := parseGitURL(primaryURL)
-			if parseErr != nil {
-				return "", parseErr
-			}
-			release, releaseErr := provider.GetLatestRelease(owner, repo)
-			if releaseErr != nil {
-				return "", releaseErr
-			}
-			output = release.Format()
-
-		case "git_branch_status":
-			// checking that the local branch has remote tracking first
-			if !hasRemoteTrackingBranch(gitRoot) {
-				output = "Local branch has not been pushed to the remote."
-				break
-			}
-			provider, err := initGitProvider()
-			if err != nil {
-				return "", fmt.Errorf("failed to initialize git provider: %v", err)
-			}
-			primaryURL, urlErr := findPrimaryRemoteRepoURL(gitRoot)
-			if urlErr != nil {
-				return "", urlErr
-			}
-
-			owner, repo, parseErr := parseGitURL(primaryURL)
-			if parseErr != nil {
-				return "", parseErr
-			}
-			localBranch, localBranchErr := runCommand(gitRoot, "git", "branch", "--show-current")
-			if localBranchErr != nil {
-				return "", localBranchErr
-			}
-			localBranch = strings.TrimSpace(localBranch)
-			branchComparison, branchComparisonErr := provider.CompareBranchWithDefault(owner, repo, localBranch)
-			if branchComparisonErr != nil {
-				return "", branchComparisonErr
-			}
-			output = branchComparison.Format()
-
-		case "github_prs", "gitlab_mrs":
-			provider, err := initGitProvider()
-			if err != nil {
-				return "", fmt.Errorf("failed to initialize git provider: %v", err)
-			}
-
-			primaryURL, urlErr := findPrimaryRemoteRepoURL(gitRoot)
-			if urlErr != nil {
-				return "", urlErr
-			}
-
-			owner, repo, parseErr := parseGitURL(primaryURL)
-			if parseErr != nil {
-				return "", parseErr
-			}
-
-			prs, prErr := provider.GetOpenPullRequests(owner, repo)
-			if prErr != nil {
-				return "", prErr
-			}
-
-			var prsBuilder strings.Builder
-
-			for _, pr := range prs {
-				prsBuilder.WriteString(pr.Format())
-			}
-			output = prsBuilder.String()
-
-		default:
+		if handler, ok := commandHandlersMap[trimmedCmd]; ok {
+			output, err = handler()
+		} else {
 			fmt.Printf("xplane: Running generic command '%s' ...\n", trimmedCmd)
 			output, err = runCommand(gitRoot, trimmedCmd, gitRoot)
 		}
@@ -190,8 +100,8 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 	}
 	staticPrompt := string(staticPromptBytes)
 
-	finalPrompt := strings.Replace(staticPrompt, "{{CURRENT_CONTEXT}}", fetchedDynamicContext, -1)
-	finalPrompt = strings.Replace(finalPrompt, "{{PREVIOUS_CONTEXT}}", string(previousDynamicContext), -1)
+	finalPrompt := strings.ReplaceAll(staticPrompt, "{{CURRENT_CONTEXT}}", fetchedDynamicContext)
+	finalPrompt = strings.ReplaceAll(finalPrompt, "{{PREVIOUS_CONTEXT}}", string(previousDynamicContext))
 
 	// getting summary from LLM
 	summary, err := llm.summarizeContext(finalPrompt)
