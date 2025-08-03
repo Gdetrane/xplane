@@ -22,12 +22,13 @@ var specialCommandToBinMap = map[string]string{
 }
 
 type Config struct {
-	Commands    []string
-	GithubToken string
-	GitlabToken string
-	Provider    string
-	APIKey      string
-	Model       string
+	Commands            []string
+	GithubToken         string
+	GitlabToken         string
+	Provider            string
+	APIKey              string
+	Model               string
+	OllamaServerAddress string
 }
 
 func ensureBinaryInstalled(bin string) error {
@@ -45,11 +46,12 @@ func ensureBinaryInstalled(bin string) error {
 
 func loadConfig() (*Config, error) {
 	cfg := &Config{
-		GithubToken: os.Getenv("GITHUB_TOKEN"),
-		GitlabToken: os.Getenv("GITLAB_TOKEN"),
-		Provider:    os.Getenv("XPLANE_PROVIDER"),
-		APIKey:      os.Getenv("XPLANE_API_KEY"),
-		Model:       os.Getenv("XPLANE_MODEL"),
+		GithubToken:         os.Getenv("GITHUB_TOKEN"),
+		GitlabToken:         os.Getenv("GITLAB_TOKEN"),
+		Provider:            os.Getenv("XPLANE_PROVIDER"),
+		APIKey:              os.Getenv("XPLANE_API_KEY"),
+		Model:               os.Getenv("XPLANE_MODEL"),
+		OllamaServerAddress: os.Getenv("OLLAMA_HOST"),
 	}
 
 	if cfg.Provider == "" {
@@ -58,6 +60,16 @@ func loadConfig() (*Config, error) {
 
 	if cfg.Model == "" && cfg.Provider == "gemini_cli" {
 		cfg.Model = "gemini-2.5-pro"
+	}
+
+	if cfg.Provider == "ollama" {
+		if cfg.OllamaServerAddress == "" {
+			fmt.Println("No 'OLLAMA_HOST' provided, defaulting to 'http://localhost:11434'...")
+			cfg.OllamaServerAddress = "http://localhost:11434"
+		}
+		if cfg.Model == "" {
+			fmt.Println("No 'XPLANE_MODEL' provided, defaulting to 'gemma3n'...")
+		}
 	}
 
 	commandsStr := os.Getenv("XPLANE_COMMANDS")
