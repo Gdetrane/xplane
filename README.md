@@ -108,7 +108,7 @@ The first time you run `xplane` in a project, it will automatically create a `.x
 - [x] Implemented `github` provider
 - [ ] Add more methods to `GitProvider`
 - [ ] Implement `gitlab` and eventually more niche providers like `gitea` or `codeberg`
-- [ ] Implement `ollama` provider
+- [x] Implement `ollama` provider
 - [ ] Implement `claude code` or other API-based LLM providers
 - [ ] Add more built-in context commands
 - [ ] Implement fancy output formatting
