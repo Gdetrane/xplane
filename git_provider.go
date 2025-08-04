@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v74/github"
-	// "gitlab.com/gitlab-org/api/client-go"
+	"gitlab.com/gitlab-org/api/client-go"
 	"golang.org/x/oauth2"
 )
 
@@ -27,6 +27,7 @@ func parseGitURL(url string) (owner string, repo string, err error) {
 }
 
 type GitProvider interface {
+	GetProviderName() string
 	GetOpenPullRequests(owner, repo string) ([]PullRequest, error)
 	GetLatestRelease(owner, repo string) (Release, error)
 	CompareBranchWithDefault(owner, repo, localBranch string) (BranchComparison, error)
@@ -34,6 +35,10 @@ type GitProvider interface {
 
 type GithubProvider struct {
 	client *github.Client
+}
+
+func (g *GithubProvider) GetProviderName() string {
+	return "github"
 }
 
 func (g *GithubProvider) GetOpenPullRequests(owner, repo string) ([]PullRequest, error) {
@@ -99,12 +104,132 @@ func (g *GithubProvider) CompareBranchWithDefault(owner, repo, localBranch strin
 }
 
 type GitlabProvider struct {
-	repo  string
-	token string
+	client *gitlab.Client
+}
+
+func (g *GitlabProvider) GetProviderName() string {
+	return "gitlab"
 }
 
 func (g *GitlabProvider) GetOpenPullRequests(owner, repo string) ([]PullRequest, error) {
-	return nil, nil
+	// gitlab's api is slightly different, owner and repo are bundled into a project id like "owner/repo"
+	projectID := fmt.Sprintf("%s/%s", owner, repo)
+
+	prState := "opened"
+	// I'm unifying notation but technically gitlab calls them Merge Requests
+	opts := &gitlab.ListProjectMergeRequestsOptions{
+		State: &prState,
+	}
+	mrs, _, err := g.client.MergeRequests.ListProjectMergeRequests(projectID, opts)
+	if err != nil {
+		return nil, fmt.Errorf("xplane: error fetching MRs from Gitlab: %v", err)
+	}
+
+	var results []PullRequest
+
+	for _, mr := range mrs {
+		results = append(results, PullRequest{
+			Title:       mr.Title,
+			Author:      mr.Author.Username,
+			Description: mr.Description,
+			URL:         mr.WebURL,
+		})
+	}
+
+	return results, nil
+}
+
+func (g *GitlabProvider) GetLatestRelease(owner, repo string) (Release, error) {
+	projectID := fmt.Sprintf("%s/%s", owner, repo)
+
+	opts := &gitlab.ListReleasesOptions{
+		ListOptions: gitlab.ListOptions{
+			Page:    1,
+			PerPage: 1,
+		},
+	}
+
+	releases, _, err := g.client.Releases.ListReleases(projectID, opts)
+	if err != nil {
+		return Release{}, fmt.Errorf("xplane: error fetching releases from Gitlab: %v", err)
+	}
+	if len(releases) == 0 {
+		return Release{TagName: "No releases found"}, nil
+	}
+
+	latest := releases[0]
+	return Release{
+		TagName:     latest.TagName,
+		Name:        latest.Name,
+		URL:         latest.Links.Self,
+		PublishedAt: latest.ReleasedAt.Format("Sat, Nov 4, 1995"),
+	}, nil
+}
+
+// lists commits on a branch and counts until the merge base (stopSHA) is found
+func (g *GitlabProvider) countCommitsSince(projectID, branchName, stopSHA string) (int, error) {
+	commits, _, err := g.client.Commits.ListCommits(projectID, &gitlab.ListCommitsOptions{RefName: &branchName})
+	if err != nil {
+		return 0, fmt.Errorf("could not list commits for branch: %s: %w", branchName, err)
+	}
+
+	count := 0
+	for _, commit := range commits {
+		if commit.ID == stopSHA {
+			break
+		}
+		count++
+	}
+	return count, nil
+}
+
+func (g *GitlabProvider) CompareBranchWithDefault(owner, repo, localBranch string) (BranchComparison, error) {
+	projectID := fmt.Sprintf("%s/%s", owner, repo)
+
+	project, _, err := g.client.Projects.GetProject(projectID, nil)
+	if err != nil {
+		return BranchComparison{}, fmt.Errorf("xplane: could not get Gitlab repo info: %v", err)
+	}
+	defaultBranch := project.DefaultBranch
+
+	if localBranch == defaultBranch {
+		return BranchComparison{Status: "identical"}, nil
+	}
+
+	// Gitlab does not provide ahead by or behind by in its metrics, I implemented this manually
+	refs := []string{localBranch, defaultBranch}
+	mbOptions := &gitlab.MergeBaseOptions{
+    Ref: &refs,
+	}
+	mergeBase, _, err := g.client.Repositories.MergeBase(projectID, mbOptions)
+	if err != nil {
+		return BranchComparison{}, fmt.Errorf("xplane: could not find merge base for gitlab branches: %w", err)
+	}
+
+	aheadBy, err := g.countCommitsSince(projectID, localBranch, mergeBase.ID)
+	if err != nil {
+		return BranchComparison{}, err
+	}
+
+	behindBy, err := g.countCommitsSince(projectID, defaultBranch, mergeBase.ID)
+	if err != nil {
+		return BranchComparison{}, err
+	}
+
+	status := "diverged"
+	if aheadBy > 0 && behindBy == 0 {
+		status = "ahead"
+	} else if aheadBy == 0 && behindBy > 0 {
+		status = "behind"
+	} else if aheadBy == 0 && behindBy == 0 {
+		status = "identical"
+	}
+
+	return BranchComparison{
+		AheadBy: aheadBy,
+		BehindBy: behindBy,
+		Status: status,
+	}, nil
 }
 
 func NewGitHubProvider(token string) *GithubProvider {
@@ -115,6 +240,15 @@ func NewGitHubProvider(token string) *GithubProvider {
 	return &GithubProvider{
 		client: github.NewClient(tokenClient),
 	}
+}
+
+func NewGitlabProvider(token string, hostURL string) (*GitlabProvider, error) {
+	client, err := gitlab.NewClient(token, gitlab.WithBaseURL(hostURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gitlab client: %w", err)
+	}
+
+	return &GitlabProvider{client: client}, nil
 }
 
 type GitEntity interface {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -55,9 +56,21 @@ func hasRemoteTrackingBranch(gitRoot string) bool {
 	return err == nil
 }
 
+// extracts the host (e.g. gitlab.cee.redhat.com) from a URL
+func getHostFromURL(url string) string {
+	re := regexp.MustCompile(`@(.*?):`)
+	matches := re.FindStringSubmatch(url)
+	if len(matches) > 1 {
+		return "https://" + matches[1] // Return with https scheme
+	}
+	return ""
+}
+
 // returns a struct that implements the GitProvider interface, for the supported remote git providers (github, gitlab, etc)
 func getGitProvider(gitRoot string, cfg *Config) (GitProvider, error) {
 	remote, err := findPrimaryRemoteRepoURL(gitRoot)
+	hostURL := getHostFromURL(remote)
+	hostURL = strings.TrimSpace(hostURL)
 	if err != nil {
 		return nil, fmt.Errorf("xplane: error retrieving git remote provider: %v", err)
 	}
@@ -67,6 +80,13 @@ func getGitProvider(gitRoot string, cfg *Config) (GitProvider, error) {
 			return nil, fmt.Errorf("special command 'github_prs' requires GITHUB_TOKEN to be set")
 		}
 		return NewGitHubProvider(cfg.GithubToken), nil
+	}
+
+	if strings.Contains(remote, "gitlab") {
+		if cfg.GitlabToken == "" {
+			return nil, fmt.Errorf("command 'gitlab_mrs' requires GITLAB_TOKEN to be set")
+		}
+		return NewGitlabProvider(cfg.GitlabToken, hostURL)
 	}
 	return nil, fmt.Errorf("xplane: unsupported git provider")
 }
@@ -88,7 +108,26 @@ func getTokeiStats(gitRoot string) (string, error) {
 
 // returns potential leaked secrets
 func getRipSecrets(gitRoot string) (string, error) {
-	return runCommand(gitRoot, "ripsecrets")
+	cmd := exec.Command("ripsecrets", gitRoot)
+	cmd.Dir = gitRoot
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		// for ripsecrets, a code of 1 just means secrets have been found, so I shouldn't exit
+		if exitErr.ExitCode() == 1 {
+			return out.String(), nil
+		}
+	}
+
+	if err == nil {
+		return "No secrets leaked.", nil
+	}
+
+	return "", fmt.Errorf("command 'ripsecrets' failed: %s, stderr: %s", err, stderr.String())
 }
 
 // reads and returns README.md's content if present, or a placeholder string
