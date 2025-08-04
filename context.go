@@ -25,6 +25,7 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 	var contextBuilder strings.Builder
 
 	gatherer := NewContextGatherer(gitRoot, cfg)
+	gatherer.initProvider()
 
 	commandHandlersMap := map[string]func() (string, error){
 		"git_status":        func() (string, error) { return getGitStatus(gitRoot) },
@@ -42,6 +43,19 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 		var output string
 		var err error
 		trimmedCmd := strings.TrimSpace(command)
+
+		if trimmedCmd == "github_prs" || trimmedCmd == "gitlab_mrs" {
+			if gatherer.gitProvider == nil {
+				continue
+			}
+			providerName := gatherer.gitProvider.GetProviderName()
+			if providerName == "github" && trimmedCmd == "gitlab_mrs" {
+				continue
+			}
+			if providerName == "gitlab" && trimmedCmd == "github_prs" {
+				continue
+			}
+		}
 
 		if handler, ok := commandHandlersMap[trimmedCmd]; ok {
 			output, err = handler()
@@ -62,6 +76,18 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 	dynamicContextPath := filepath.Join(gitRoot, contextDir, dynamicContextFile)
 	staticContextPath := filepath.Join(gitRoot, contextDir, staticContextFile)
+	// reading the static prompt template
+	staticPromptBytes, err := os.ReadFile(staticContextPath)
+	if os.IsNotExist(err) {
+		fmt.Println("xplane: static_context.txt not found, creating default.")
+		if err := os.MkdirAll(filepath.Dir(staticContextPath), 0o755); err != nil {
+			log.Fatalf("xplane: could not create .xplane directory: %v", err)
+		}
+		if err := os.WriteFile(staticContextPath, []byte(defaultStaticContext), 0o644); err != nil {
+			log.Fatalf("xplane: could not write default static context: %v", err)
+		}
+		staticPromptBytes, err = os.ReadFile(staticContextPath)
+	}
 
 	fetchedDynamicContext, err := gatherContext(cfg, gitRoot)
 	if err != nil {
@@ -90,14 +116,6 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 	}()
 
 	// reading the static prompt template and ensuring it's built
-	staticPromptBytes, err := os.ReadFile(staticContextPath)
-	if os.IsNotExist(err) {
-		os.MkdirAll(filepath.Dir(staticContextPath), 0o755)
-		os.WriteFile(staticContextPath, []byte(defaultStaticContext), 0o644)
-	}
-	if err != nil {
-		log.Fatalf("xplane: Could not read static context template file: %v", err)
-	}
 	staticPrompt := string(staticPromptBytes)
 
 	finalPrompt := strings.ReplaceAll(staticPrompt, "{{CURRENT_CONTEXT}}", fetchedDynamicContext)
