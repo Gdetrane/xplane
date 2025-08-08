@@ -11,6 +11,8 @@ import (
 
 func pickLLM(cfg *Config) (LLMProvider, error) {
 	switch cfg.Provider {
+	case "claude_code":
+		return &ClaudeCode{model: cfg.Model}, nil
 	case "gemini_cli":
 		return &GeminiCli{model: cfg.Model}, nil
 	case "gemini":
@@ -43,6 +45,27 @@ type LLMProvider interface {
 	summarizeContext(finalPrompt string) (string, error)
 }
 
+type ClaudeCode struct {
+	model string
+}
+
+func (c *ClaudeCode) summarizeContext(finalPrompt string) (string, error) {
+	args := []string{"--print", "--model", c.model}
+	cmd := exec.Command("claude", args...)
+
+	cmd.Stdin = strings.NewReader(finalPrompt)
+
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("claude code failed with args %v: %v, stderr: %v", args, err, stderr.String())
+	}
+	return out.String(), nil
+}
+
 type GeminiCli struct {
 	model string
 }
@@ -59,7 +82,6 @@ func (g *GeminiCli) summarizeContext(finalPrompt string) (string, error) {
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-
 	if err != nil {
 		return "", fmt.Errorf("gemini cli failed with args %v: %v, stderr: %v", args, err, stderr.String())
 	}

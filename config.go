@@ -62,6 +62,10 @@ func loadConfig() (*Config, error) {
 		cfg.Model = "gemini-2.5-pro"
 	}
 
+	if cfg.Provider == "claude_code" && cfg.Model == "" {
+		cfg.Model = "claude-sonnet-4"
+	}
+
 	if cfg.Provider == "ollama" {
 		if cfg.OllamaServerAddress == "" {
 			fmt.Println("No 'OLLAMA_HOST' provided, defaulting to 'http://localhost:11434'...")
