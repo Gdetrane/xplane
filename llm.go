@@ -43,10 +43,15 @@ func pickLLM(cfg *Config) (LLMProvider, error) {
 
 type LLMProvider interface {
 	summarizeContext(finalPrompt string) (string, error)
+	getName() string
 }
 
 type ClaudeCode struct {
 	model string
+}
+
+func (c *ClaudeCode) getName() string {
+	return "Claude Code"
 }
 
 func (c *ClaudeCode) summarizeContext(finalPrompt string) (string, error) {
@@ -70,6 +75,10 @@ type GeminiCli struct {
 	model string
 }
 
+func (g *GeminiCli) getName() string {
+	return "Gemini CLI"
+}
+
 func (g *GeminiCli) summarizeContext(finalPrompt string) (string, error) {
 	args := []string{"-y", "-m", g.model} // see gemini --help
 	cmd := exec.Command("gemini", args...)
@@ -91,6 +100,10 @@ func (g *GeminiCli) summarizeContext(finalPrompt string) (string, error) {
 type Gemini struct {
 	model  string
 	apiKey string
+}
+
+func (g *Gemini) getName() string {
+	return "Gemini"
 }
 
 func (g *Gemini) summarizeContext(finalPrompt string) (string, error) {
@@ -118,6 +131,10 @@ type OllamaTagsResponse struct {
 type Ollama struct {
 	serverAddress string
 	model         string
+}
+
+func (o *Ollama) getName() string {
+	return "Ollama"
 }
 
 func (o *Ollama) checkModelAvailability() (bool, error) {
