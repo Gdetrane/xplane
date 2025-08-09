@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type ContextGatherer struct {
 	gitRoot     string
@@ -33,7 +36,7 @@ func (cg *ContextGatherer) getOpenPRS() (string, error) {
 		return "", err
 	}
 
-	owner, repo, err := parseGitURL(url)
+	_, owner, repo, err := parseGitURL(url)
 	if err != nil {
 		return "", err
 	}
@@ -68,7 +71,7 @@ func (cg *ContextGatherer) getLatestRelease() (string, error) {
 		return "", nil
 	}
 
-	owner, repo, err := parseGitURL(url)
+	_, owner, repo, err := parseGitURL(url)
 	if err != nil {
 		return "", err
 	}
@@ -83,13 +86,41 @@ func (cg *ContextGatherer) getLatestRelease() (string, error) {
 
 func (cg *ContextGatherer) getGitBranchStatus() (string, error) {
 	// checking that the local branch has remote tracking first
+	// this is not enough if a branch has been pushed but then removed from the remote
+	// e.g. a branch could be autoremoved on the remote after a Merge and git wouldn't know locally without a git fetch --prune
 	if !hasRemoteTrackingBranch(cg.gitRoot) {
 		output := "Local branch has not been pushed to the remote."
 		return output, nil
 	}
 
+
 	if err := cg.initProvider(); err != nil {
 		return "", nil
+	}
+	
+	localBranch, err := runCommand(cg.gitRoot, "git", "branch", "--show-current")
+	if err != nil {
+		return "", err
+	}
+	localBranch = strings.TrimSpace(localBranch)
+
+	// adding an extra check on the remote itself
+	_, _, repoName, err := parseGitURL(cg.gitProvider.GetRemoteURL())
+	if err != nil {
+		return "", err
+	}
+	forkOwner, err := getForkOwner(cg.gitRoot)
+	if err != nil {
+		return "", err
+	}
+
+	existsOnFork, err := cg.gitProvider.BranchExistsOnRemoteOrigin(forkOwner, repoName, localBranch)
+	if err != nil {
+		return "", err
+	}
+
+	if !existsOnFork {
+		return fmt.Sprintf("Local branch '%s' has been deleted from the remote fork.", localBranch), nil
 	}
 
 	url, err := findPrimaryRemoteRepoURL(cg.gitRoot)
@@ -97,17 +128,12 @@ func (cg *ContextGatherer) getGitBranchStatus() (string, error) {
 		return "", nil
 	}
 
-	owner, repo, err := parseGitURL(url)
+	_, owner, repo, err := parseGitURL(url)
 	if err != nil {
 		return "", err
 	}
 
-	localBranch, err := runCommand(cg.gitRoot, "git", "branch", "--show-current")
-	if err != nil {
-		return "", err
-	}
-	localBranch = strings.TrimSpace(localBranch)
-	branchComparison, err := cg.gitProvider.CompareBranchWithDefault(owner, repo, localBranch)
+	branchComparison, err := cg.gitProvider.CompareBranchWithDefault(owner, repo, forkOwner, localBranch)
 	if err != nil {
 		return "", err
 	}

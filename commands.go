@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -56,58 +55,81 @@ func hasRemoteTrackingBranch(gitRoot string) bool {
 	return err == nil
 }
 
-// extracts the host (e.g. gitlab.cee.redhat.com) from a URL
-func getHostFromURL(url string) string {
-	re := regexp.MustCompile(`@(.*?):`)
-	matches := re.FindStringSubmatch(url)
-	if len(matches) > 1 {
-		return "https://" + matches[1] // Return with https scheme
+func getHostFromURL(url string) (string, error) {
+	host, _, _, err := parseGitURL(url)
+	if err != nil {
+		return "", err
 	}
-	return ""
+
+	return host, nil
 }
 
-// returns a struct that implements the GitProvider interface, for the supported remote git providers (github, gitlab, etc)
+func getForkOwner(gitRoot string) (string, error) {
+	originURL, err := runCommand(gitRoot, "git", "remote", "get-url", "origin")
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve origin remote URL to determine fork owner: %w", err)
+	}
+
+	originURL = strings.TrimSpace(originURL)
+	_, owner, _, err := parseGitURL(originURL)
+	return owner, err
+}
+
 func getGitProvider(gitRoot string, cfg *Config) (GitProvider, error) {
-	remote, err := findPrimaryRemoteRepoURL(gitRoot)
-	hostURL := getHostFromURL(remote)
-	hostURL = strings.TrimSpace(hostURL)
+	primaryRemote, err := findPrimaryRemoteRepoURL(gitRoot) // upstream prevails in fork based workflows
 	if err != nil {
 		return nil, fmt.Errorf("xplane: error retrieving git remote provider: %v", err)
 	}
+	hostURL, getHostErr := getHostFromURL(primaryRemote)
+	if getHostErr != nil {
+		return nil, err
+	}
+	hostURL = "https://" + strings.TrimSpace(hostURL)
 
-	if strings.Contains(remote, "github") {
+	// I need it anyways
+	originRemote, err := runCommand(gitRoot, "git", "remote", "get-url", "origin")
+	if err != nil {
+		return nil, err
+	}
+	originRemote = strings.TrimSpace(originRemote)
+
+	if strings.Contains(primaryRemote, "github") {
 		if cfg.GithubToken == "" {
 			return nil, fmt.Errorf("special command 'github_prs' requires GITHUB_TOKEN to be set")
 		}
-		return NewGitHubProvider(cfg.GithubToken), nil
+		return NewGitHubProvider(cfg.GithubToken, originRemote, primaryRemote), nil
 	}
 
-	if strings.Contains(remote, "gitlab") {
+	if strings.Contains(primaryRemote, "gitlab") {
 		if cfg.GitlabToken == "" {
-			return nil, fmt.Errorf("command 'gitlab_mrs' requires GITLAB_TOKEN to be set")
+			return nil, fmt.Errorf("special command 'gitlab_mrs' requires GITLAB_TOKEN to be set")
 		}
-		return NewGitlabProvider(cfg.GitlabToken, hostURL)
+		return NewGitlabProvider(cfg.GitlabToken, hostURL, originRemote, primaryRemote)
 	}
 	return nil, fmt.Errorf("xplane: unsupported git provider")
 }
 
 // returns git status in a machine parsable format using the low level porcelain format
 func getGitStatus(gitRoot string) (string, error) {
+	fmt.Println(MsgCheckingGitStatus)
 	return runCommand(gitRoot, "git", "status", "--porcelain")
 }
 
 // returns a concise log of the latest N commits
 func getGitLog(gitRoot string, n int) (string, error) {
+	fmt.Println(MsgFetchingGitLog)
 	return runCommand(gitRoot, "git", "log", "--oneline", "--graph", "--decorate", "-n", strconv.Itoa(n))
 }
 
 // returns code statistics in json format
 func getTokeiStats(gitRoot string) (string, error) {
+	fmt.Println(MsgGetCodeStats)
 	return runCommand(gitRoot, "tokei", "--output", "json")
 }
 
 // returns potential leaked secrets
 func getRipSecrets(gitRoot string) (string, error) {
+	fmt.Println(MsgGetLeakedSecrets)
 	cmd := exec.Command("ripsecrets", gitRoot)
 	cmd.Dir = gitRoot
 	var out, stderr bytes.Buffer

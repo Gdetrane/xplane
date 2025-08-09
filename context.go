@@ -22,10 +22,11 @@ func createPlaceHolderContext(cfg *Config) string {
 
 // wraps around various special commands, as well as custom commands, to gather context for an LLM
 func gatherContext(cfg *Config, gitRoot string) (string, error) {
+	fmt.Println(MsgFetchingContext)
 	var contextBuilder strings.Builder
 
 	gatherer := NewContextGatherer(gitRoot, cfg)
-	gatherer.initProvider()
+	initErr := gatherer.initProvider()
 
 	commandHandlersMap := map[string]func() (string, error){
 		"git_status":        func() (string, error) { return getGitStatus(gitRoot) },
@@ -44,8 +45,11 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 		var err error
 		trimmedCmd := strings.TrimSpace(command)
 
-		if trimmedCmd == "github_prs" || trimmedCmd == "gitlab_mrs" {
-			if gatherer.gitProvider == nil {
+		isGitProviderBasedCommand := trimmedCmd == "github_prs" || trimmedCmd == "gitlab_mrs" || trimmedCmd == "release" || trimmedCmd == "git_branch_status"
+
+		if isGitProviderBasedCommand {
+      if initErr != nil {
+				fmt.Printf("    - ⚠️  Skipping command '%s': could not initialize git provider (%v)\n", trimmedCmd, initErr)
 				continue
 			}
 			providerName := gatherer.gitProvider.GetProviderName()
@@ -55,12 +59,13 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 			if providerName == "gitlab" && trimmedCmd == "github_prs" {
 				continue
 			}
+			fmt.Println(buildRemoteInfoMsg(providerName, trimmedCmd))
 		}
 
 		if handler, ok := commandHandlersMap[trimmedCmd]; ok {
 			output, err = handler()
 		} else {
-			fmt.Printf("xplane: Running generic command '%s' ...\n", trimmedCmd)
+			fmt.Printf(MsgGenericCommand, trimmedCmd)
 			output, err = runCommand(gitRoot, trimmedCmd, gitRoot)
 		}
 
@@ -107,6 +112,7 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 		fmt.Println("✅ xplane: No new updates.")
 		return
 	}
+	fmt.Printf(MsgAnalyzingContext, llm.getName(), cfg.Model)
 
 	// always writing to the file if there are changes in dynamic context
 	defer func() {

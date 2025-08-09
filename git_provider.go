@@ -11,34 +11,60 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var gitURLRegex = regexp.MustCompile(`(?:git@|https://)[\w.-]+(?::|/)([\w.-]+)/([\w.-]+?)(\.git)?$`)
+var gitURLRegex = regexp.MustCompile(`(?:git@|https://)([\w.-]+)(?::|/)([\w.-]+)/([\w.-]+?)(\.git)?$`)
 
-func parseGitURL(url string) (owner string, repo string, err error) {
+func parseGitURL(url string) (host string, owner string, repoName string, err error) {
 	matches := gitURLRegex.FindStringSubmatch(url)
 
-	if len(matches) < 3 {
-		return "", "", fmt.Errorf("could not parse owner and repo from url: %s", url)
+	if len(matches) < 4 {
+		return "", "", "", fmt.Errorf("could not parse owner and repo from url: %s", url)
 	}
 
-	owner = matches[1]
-	repo = matches[2]
+	host = matches[1]
+	owner = matches[2]
+	repoName = matches[3]
 
-	return owner, repo, nil
+	return host, owner, repoName, nil
 }
 
 type GitProvider interface {
 	GetProviderName() string
+	GetRemoteURL() string
+	GetUpstreamURL() string
+	BranchExistsOnRemoteOrigin(owner, repo, branchName string) (bool, error)
 	GetOpenPullRequests(owner, repo string) ([]PullRequest, error)
 	GetLatestRelease(owner, repo string) (Release, error)
-	CompareBranchWithDefault(owner, repo, localBranch string) (BranchComparison, error)
+	CompareBranchWithDefault(owner, repo, forkOwner, localBranch string) (BranchComparison, error)
 }
 
 type GithubProvider struct {
-	client *github.Client
+	client            *github.Client
+	remoteOriginURL   string
+	remoteUpstreamURL string
 }
 
 func (g *GithubProvider) GetProviderName() string {
 	return "github"
+}
+
+func (g *GithubProvider) GetRemoteURL() string {
+	return g.remoteOriginURL
+}
+
+func (g *GithubProvider) GetUpstreamURL() string {
+	return g.remoteUpstreamURL
+}
+
+func (g *GithubProvider) BranchExistsOnRemoteOrigin(owner, repo, branchName string) (bool, error) {
+	_, resp, err := g.client.Repositories.GetBranch(context.Background(), owner, repo, branchName, 1)
+	if err != nil {
+		if resp != nil && resp.StatusCode == 404 {
+			// branch doesn't exist
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (g *GithubProvider) GetOpenPullRequests(owner, repo string) ([]PullRequest, error) {
@@ -77,7 +103,7 @@ func (g *GithubProvider) GetLatestRelease(owner, repo string) (Release, error) {
 	}, nil
 }
 
-func (g *GithubProvider) CompareBranchWithDefault(owner, repo, localBranch string) (BranchComparison, error) {
+func (g *GithubProvider) CompareBranchWithDefault(owner, repo, forkOwner, localBranch string) (BranchComparison, error) {
 	// finding repo's default branch
 	repoInfo, _, err := g.client.Repositories.Get(context.Background(), owner, repo)
 	if err != nil {
@@ -86,12 +112,16 @@ func (g *GithubProvider) CompareBranchWithDefault(owner, repo, localBranch strin
 	defaultBranch := repoInfo.GetDefaultBranch()
 
 	// obv not comparing to itself
-	if localBranch == defaultBranch {
+	if localBranch == defaultBranch && owner == forkOwner {
 		return BranchComparison{Status: "identical"}, nil
 	}
 
+	// using format "owner:branch"
+	baseRef := defaultBranch
+	headRef := fmt.Sprintf("%s:%s", forkOwner, localBranch)
+
 	// comparing the HEAD of local branch and default branch
-	comparison, _, err := g.client.Repositories.CompareCommits(context.Background(), owner, repo, defaultBranch, localBranch, nil)
+	comparison, _, err := g.client.Repositories.CompareCommits(context.Background(), owner, repo, baseRef, headRef, nil)
 	if err != nil {
 		return BranchComparison{}, fmt.Errorf("xplane: could not compare branches: %v", err)
 	}
@@ -104,11 +134,34 @@ func (g *GithubProvider) CompareBranchWithDefault(owner, repo, localBranch strin
 }
 
 type GitlabProvider struct {
-	client *gitlab.Client
+	client            *gitlab.Client
+	remoteOriginURL   string
+	remoteUpstreamURL string
 }
 
 func (g *GitlabProvider) GetProviderName() string {
 	return "gitlab"
+}
+
+func (g *GitlabProvider) GetRemoteURL() string {
+	return g.remoteOriginURL
+}
+
+func (g *GitlabProvider) GetUpstreamURL() string {
+	return g.remoteUpstreamURL
+}
+
+func (g *GitlabProvider) BranchExistsOnRemoteOrigin(owner, repo, branchName string) (bool, error) {
+	projectID := fmt.Sprintf("%s/%s", owner, repo)
+	_, resp, err := g.client.Branches.GetBranch(projectID, branchName)
+	if err != nil {
+		if resp != nil && resp.StatusCode == 404 {
+			// branch doesn't exist
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (g *GitlabProvider) GetOpenPullRequests(owner, repo string) ([]PullRequest, error) {
@@ -166,54 +219,83 @@ func (g *GitlabProvider) GetLatestRelease(owner, repo string) (Release, error) {
 	}, nil
 }
 
-// lists commits on a branch and counts until the merge base (stopSHA) is found
-func (g *GitlabProvider) countCommitsSince(projectID, branchName, stopSHA string) (int, error) {
-	commits, _, err := g.client.Commits.ListCommits(projectID, &gitlab.ListCommitsOptions{RefName: &branchName})
-	if err != nil {
-		return 0, fmt.Errorf("could not list commits for branch: %s: %w", branchName, err)
+// helper that simplifies fetching commits from paged gitlab content
+func (g *GitlabProvider) getAllCommits(projectID, branchName string) ([]*gitlab.Commit, error) {
+	opts := &gitlab.ListCommitsOptions{
+		RefName: &branchName,
+		ListOptions: gitlab.ListOptions{
+			PerPage: 100, // max value allowed per page
+			Page:    1,
+		},
 	}
 
-	count := 0
-	for _, commit := range commits {
-		if commit.ID == stopSHA {
+	var allCommits []*gitlab.Commit
+
+	for {
+		commits, resp, err := g.client.Commits.ListCommits(projectID, opts)
+		if err != nil {
+			return nil, err
+		}
+		allCommits = append(allCommits, commits...)
+
+		if resp.NextPage == 0 {
 			break
 		}
-		count++
+		opts.Page = resp.NextPage
 	}
-	return count, nil
+	return allCommits, nil
 }
 
-func (g *GitlabProvider) CompareBranchWithDefault(owner, repo, localBranch string) (BranchComparison, error) {
-	projectID := fmt.Sprintf("%s/%s", owner, repo)
+func (g *GitlabProvider) CompareBranchWithDefault(owner, repo, forkOwner, localBranch string) (BranchComparison, error) {
+	upstreamProjectID := fmt.Sprintf("%s/%s", owner, repo)
+	forkProjectID := fmt.Sprintf("%s/%s", forkOwner, repo)
 
-	project, _, err := g.client.Projects.GetProject(projectID, nil)
+	project, _, err := g.client.Projects.GetProject(upstreamProjectID, nil)
 	if err != nil {
 		return BranchComparison{}, fmt.Errorf("xplane: could not get Gitlab repo info: %v", err)
 	}
 	defaultBranch := project.DefaultBranch
 
-	if localBranch == defaultBranch {
+	if localBranch == defaultBranch && owner == forkOwner {
 		return BranchComparison{Status: "identical"}, nil
 	}
 
-	// Gitlab does not provide ahead by or behind by in its metrics, I implemented this manually
-	refs := []string{localBranch, defaultBranch}
-	mbOptions := &gitlab.MergeBaseOptions{
-    Ref: &refs,
-	}
-	mergeBase, _, err := g.client.Repositories.MergeBase(projectID, mbOptions)
+	// I need to implement cross-fork comparison logic manually
+	upstreamCommits, err := g.getAllCommits(upstreamProjectID, defaultBranch)
 	if err != nil {
-		return BranchComparison{}, fmt.Errorf("xplane: could not find merge base for gitlab branches: %w", err)
+		return BranchComparison{}, fmt.Errorf("xplane: could not list commits for upstream default branch: %w", err)
 	}
-
-	aheadBy, err := g.countCommitsSince(projectID, localBranch, mergeBase.ID)
-	if err != nil {
-		return BranchComparison{}, err
+	upstreamCommitMap := make(map[string]bool)
+	for _, commit := range upstreamCommits {
+		upstreamCommitMap[commit.ID] = true
 	}
 
-	behindBy, err := g.countCommitsSince(projectID, defaultBranch, mergeBase.ID)
+	forkCommits, err := g.getAllCommits(forkProjectID, localBranch)
 	if err != nil {
-		return BranchComparison{}, err
+		return BranchComparison{}, fmt.Errorf("xplane: could not list commits for remote origin branch: '%s': %w", localBranch, err)
+	}
+
+	// comparing fork and upstream until a merge base is found, any other commit is ahead and thus I can increase the count
+	var mergeBaseSHA string
+	aheadBy := 0
+	for _, commit := range forkCommits {
+		if upstreamCommitMap[commit.ID] {
+			mergeBaseSHA = commit.ID
+			break
+		}
+		aheadBy++
+	}
+
+	if mergeBaseSHA == "" {
+		return BranchComparison{}, fmt.Errorf("could not find a common ancestor for the compared branches")
+	}
+	// now I can check how behind the current local branch is from the upstream -> increase until the merge base is reached
+	behindBy := 0
+	for _, commit := range upstreamCommits {
+		if commit.ID == mergeBaseSHA {
+			break
+		}
+		behindBy++
 	}
 
 	status := "diverged"
@@ -226,29 +308,31 @@ func (g *GitlabProvider) CompareBranchWithDefault(owner, repo, localBranch strin
 	}
 
 	return BranchComparison{
-		AheadBy: aheadBy,
+		AheadBy:  aheadBy,
 		BehindBy: behindBy,
-		Status: status,
+		Status:   status,
 	}, nil
 }
 
-func NewGitHubProvider(token string) *GithubProvider {
+func NewGitHubProvider(token string, remoteOriginURL string, remoteUpstreamURL string) *GithubProvider {
 	ctx := context.Background()
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	tokenClient := oauth2.NewClient(ctx, tokenSource)
 
 	return &GithubProvider{
-		client: github.NewClient(tokenClient),
+		client:            github.NewClient(tokenClient),
+		remoteOriginURL:   remoteOriginURL,
+		remoteUpstreamURL: remoteUpstreamURL,
 	}
 }
 
-func NewGitlabProvider(token string, hostURL string) (*GitlabProvider, error) {
+func NewGitlabProvider(token string, hostURL string, remoteOriginURL string, remoteUpstreamURL string) (*GitlabProvider, error) {
 	client, err := gitlab.NewClient(token, gitlab.WithBaseURL(hostURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gitlab client: %w", err)
 	}
 
-	return &GitlabProvider{client: client}, nil
+	return &GitlabProvider{client: client, remoteOriginURL: remoteOriginURL, remoteUpstreamURL: remoteUpstreamURL}, nil
 }
 
 type GitEntity interface {
