@@ -21,6 +21,7 @@ const (
 
 		---
 		Add a section at the end of your responses labeled 'UNCERTAINTY MAP', where you describe what you're least confident about and what questions would change your opinion.
+	  You will be rendered in a terminal environment that uses a feature-rich markdown renderer, leverage MD syntax to make the output as pretty and human readable as possible.
 	`
 )
 
