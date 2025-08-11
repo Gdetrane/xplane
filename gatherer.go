@@ -93,11 +93,10 @@ func (cg *ContextGatherer) getGitBranchStatus() (string, error) {
 		return output, nil
 	}
 
-
 	if err := cg.initProvider(); err != nil {
 		return "", nil
 	}
-	
+
 	localBranch, err := runCommand(cg.gitRoot, "git", "branch", "--show-current")
 	if err != nil {
 		return "", err

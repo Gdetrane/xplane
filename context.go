@@ -48,7 +48,7 @@ func gatherContext(cfg *Config, gitRoot string) (string, error) {
 		isGitProviderBasedCommand := trimmedCmd == "github_prs" || trimmedCmd == "gitlab_mrs" || trimmedCmd == "release" || trimmedCmd == "git_branch_status"
 
 		if isGitProviderBasedCommand {
-      if initErr != nil {
+			if initErr != nil {
 				fmt.Printf("    - ⚠️  Skipping command '%s': could not initialize git provider (%v)\n", trimmedCmd, initErr)
 				continue
 			}
@@ -132,6 +132,13 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 	if err != nil {
 		fmt.Printf("⚠️ xplane: Could not generate summary: %v\n", err)
 	} else {
-		fmt.Println(summary)
+		renderedSummary, renderErr := renderMarkdown(summary)
+		if renderErr != nil {
+			// fallback to printing
+			fmt.Println("Error rendering markdown, printing raw output:")
+			fmt.Println(summary)
+		} else {
+			fmt.Println(renderedSummary)
+		}
 	}
 }
