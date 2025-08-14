@@ -2,8 +2,6 @@
 
 A smart project assistant for your shell, designed to give you an intelligent summary of your project's status every time you `cd` into it.
 
-> **Note:** This project is currently a work in progress. The core functionality is in place, but features and tests are still being added and refined.
-
 ---
 
 ## What is xplane?
@@ -69,31 +67,72 @@ After setting up your `.envrc`, run `direnv allow` to approve it.
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| **`XPLANE_COMMANDS`** | A comma-separated list of context-gathering commands to run. You can override the defaults or add your own generic commands. | `git_status,git_log,readme,github_prs,tokei,ripsecrets` |
-| **`XPLANE_PROVIDER`** | The LLM provider to use for summaries. Currently supports `gemini_cli` and `gemini` (API). | `gemini_cli` |
+| **`XPLANE_COMMANDS`** | A comma-separated list of context-gathering commands to run. You can override the defaults or add your own generic commands. | `git_status,git_log,readme,git_exclude,gitignore,git_diff,github_prs,gitlab_mrs,release,git_branch_status,tokei,ripsecrets` |
+| **`XPLANE_PROVIDER`** | The LLM provider to use for summaries. Supports `claude_code`, `gemini_cli`, `gemini` (API), and `ollama`. | `gemini_cli` |
 | **`XPLANE_MODEL`** | The specific model to use with the selected provider. | `gemini-2.5-pro` |
 | **`XPLANE_API_KEY`** | The API key required for API-based providers like `gemini`. | (none) |
 | **`GITHUB_TOKEN`** | A Personal Access Token with `repo` scope (read only recommended), required for the `github_prs` command. | (none) |
 | **`GITLAB_TOKEN`** | A Personal Access Token, required for the `gitlab_mrs` command (when implemented). | (none) |
+| **`XPLANE_OLLAMA_SERVER_ADDRESS`** | The server address for Ollama when using the `ollama` provider. | `http://localhost:11434` |
 
 #### Example `.envrc`
 
 ```bash
 # .envrc
 
-# Configure the LLM provider
-export XPLANE_PROVIDER="gemini_cli"
-export XPLANE_MODEL="gemini-1.5-flash"
+# Configure the LLM provider (choose one)
+export XPLANE_PROVIDER="claude_code"              # Uses Claude Code CLI
+# export XPLANE_PROVIDER="gemini_cli"             # Uses Gemini CLI
+# export XPLANE_PROVIDER="ollama"                 # Uses local Ollama
+# export XPLANE_PROVIDER="gemini"                 # Uses Gemini API
 
-# Customize the commands to run
-export XPLANE_COMMANDS="git_status,github_prs,tokei"
+# Set model (optional, has sensible defaults)
+export XPLANE_MODEL="claude-sonnet-4"
+
+# Customize the commands to run (optional, defaults include all built-in commands)
+export XPLANE_COMMANDS="git_status,git_diff,github_prs,tokei,ripsecrets"
 
 # Provide required tokens
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxx"
+
+# For Ollama provider (optional)
+# export XPLANE_OLLAMA_SERVER_ADDRESS="http://localhost:11434"
+
+# For Gemini API provider (if using XPLANE_PROVIDER="gemini")
+# export XPLANE_API_KEY="your_gemini_api_key_here"
+
+# Run xplane
+xplane
 ```
 
 
 The first time you run `xplane` in a project, it will automatically create a `.xplane/static_context.txt` file. You can edit this file to customize the persona and instructions for the LLM.
+
+---
+
+## Built-in Commands
+
+`xplane` includes several built-in commands that provide specialized context gathering:
+
+### Git Commands
+- **`git_status`** - Shows current git working tree status
+- **`git_log`** - Displays recent commit history
+- **`git_diff`** - Shows current uncommitted changes with timestamp
+- **`git_exclude`** - Reads local git exclusions from `.git/info/exclude`
+- **`git_branch_status`** - Compares current branch with upstream/main
+- **`gitignore`** - Reads project-wide git exclusions from `.gitignore`
+
+### Remote Repository Commands  
+- **`github_prs`** - Fetches open GitHub pull requests
+- **`gitlab_mrs`** - Fetches open GitLab merge requests (when implemented)
+- **`release`** - Shows latest release information
+
+### Analysis Commands
+- **`tokei`** - Code statistics and line counts
+- **`ripsecrets`** - Scans for potentially leaked secrets
+- **`readme`** - Reads the project README file
+
+You can also add custom generic commands by including them in `XPLANE_COMMANDS`.
 
 ---
 
@@ -106,10 +145,13 @@ The first time you run `xplane` in a project, it will automatically create a `.x
 - [x] Support for fork-based workflows (`upstream` remote)
 - [x] Implemented `gemini_cli` provider
 - [x] Implemented `github` provider
+- [x] Implement `ollama` provider
+- [x] Implement `claude_code` provider
+- [x] Add more built-in context commands (`git_diff`, `git_exclude`, `gitignore`, `git_branch_status`, `release`)
+- [x] Implement fancy output formatting
 - [ ] Add more methods to `GitProvider`
 - [ ] Implement `gitlab` and eventually more niche providers like `gitea` or `codeberg`
-- [x] Implement `ollama` provider
-- [ ] Implement `claude code` or other API-based LLM providers
-- [ ] Add more built-in context commands
-- [ ] Implement fancy output formatting
+- [ ] Add configuration validation and better error messages
+- [ ] Add comprehensive test suite
+- [ ] Add support for custom LLM prompt templates
 
