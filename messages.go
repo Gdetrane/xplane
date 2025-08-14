@@ -9,6 +9,7 @@ const (
 	MsgGetLeakedSecrets         = "    - \uf43d     Detecting potentially leaked secrets..."
 	MsgCheckingGitStatus        = "    - \ue65d     Checking local git status..."
 	MsgFetchingGitLog           = "    - \ue65d     Fetching recent git log..."
+	MsgFetchingGitDiff          = "    - \ue65d     Fetching uncommitted diff..."
 	MsgFetchingGithubRemoteInfo = "    - \uF09B     Fetching info from GitHub: %s"
 	MsgFetchingGitlabRemoteInfo = "    - \ue65c     Fetching info from GitLab: %s"
 	MsgAnalyzingContext         = "\uee0d  xplane: Context has changed, analyzing with %s provider using '%s'...\n\n\n"

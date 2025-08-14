@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // generic command runner
@@ -163,4 +164,46 @@ func getReadme(gitRoot string) (string, error) {
 	}
 	output = string(readmeBytes)
 	return output, nil
+}
+
+// reads and returns .git/info/exclude content if present, or a placeholder string
+func getGitExclude(gitRoot string) (string, error) {
+	excludeBytes, err := os.ReadFile(filepath.Join(gitRoot, ".git", "info", "exclude"))
+	if os.IsNotExist(err) {
+		return "No .git/info/exclude file found.", nil
+	} else if err != nil {
+		return "", err
+	}
+	return string(excludeBytes), nil
+}
+
+// reads and returns .gitignore content if present, or a placeholder string
+func getGitignore(gitRoot string) (string, error) {
+	gitignoreBytes, err := os.ReadFile(filepath.Join(gitRoot, ".gitignore"))
+	if os.IsNotExist(err) {
+		return "No .gitignore file found.", nil
+	} else if err != nil {
+		return "", err
+	}
+	return string(gitignoreBytes), nil
+}
+
+// returns git diff output showing latest changes
+func getGitDiff(gitRoot string) (string, error) {
+	fmt.Println(MsgFetchingGitDiff)
+	diff, err := runCommand(gitRoot, "git", "diff")
+	if err != nil {
+		return "", err
+	}
+	
+	// Add timestamp and explanatory context to help LLMs understand
+	// that this shows uncommitted changes (static until committed)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	header := fmt.Sprintf("Git diff captured at %s - Shows uncommitted changes (remains static until committed):\n\n", timestamp)
+	
+	if diff == "" {
+		return header + "No uncommitted changes found.", nil
+	}
+	
+	return header + diff, nil
 }
