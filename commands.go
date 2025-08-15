@@ -83,7 +83,7 @@ func getGitProvider(gitRoot string, cfg *Config) (GitProvider, error) {
 	}
 	hostURL, getHostErr := getHostFromURL(primaryRemote)
 	if getHostErr != nil {
-		return nil, err
+		return nil, getHostErr
 	}
 	hostURL = "https://" + strings.TrimSpace(hostURL)
 
