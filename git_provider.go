@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
+	"net/url"
 	"github.com/google/go-github/v74/github"
 	"gitlab.com/gitlab-org/api/client-go"
 	"golang.org/x/oauth2"
@@ -13,18 +13,35 @@ import (
 
 var gitURLRegex = regexp.MustCompile(`(?:git@|https://)([\w.-]+)(?::|/)([\w.-]+)/([\w.-]+?)(\.git)?$`)
 
-func parseGitURL(url string) (host string, owner string, repoName string, err error) {
-	matches := gitURLRegex.FindStringSubmatch(url)
+// replace the whole function with this:
+func parseGitURL(raw string) (host string, owner string, repoName string, err error) {
+    // If it looks like a full URL (ssh://, https://, http://), use net/url.
+    if strings.Contains(raw, "://") {
+        u, perr := url.Parse(raw)
+        if perr != nil {
+            return "", "", "", fmt.Errorf("could not parse remote URL: %w", perr)
+        }
+        host = u.Hostname() // strips any :port (e.g., :2222)
 
-	if len(matches) < 4 {
-		return "", "", "", fmt.Errorf("could not parse owner and repo from url: %s", url)
-	}
+        // u.Path starts with "/", e.g. "/group/repo.git"
+        parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+        if len(parts) < 2 {
+            return "", "", "", fmt.Errorf("could not parse owner/repo from path: %q", u.Path)
+        }
+        owner = parts[0]
+        repoName = strings.TrimSuffix(parts[1], ".git")
+        return host, owner, repoName, nil
+    }
 
-	host = matches[1]
-	owner = matches[2]
-	repoName = matches[3]
-
-	return host, owner, repoName, nil
+    // Fallback to SCP-style git@host:owner/repo(.git)
+    matches := gitURLRegex.FindStringSubmatch(raw)
+    if len(matches) < 4 {
+        return "", "", "", fmt.Errorf("could not parse owner and repo from url: %s", raw)
+    }
+    host = matches[1]
+    owner = matches[2]
+    repoName = matches[3]
+    return host, owner, repoName, nil
 }
 
 type GitProvider interface {
