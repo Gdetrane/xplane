@@ -3,6 +3,7 @@ module xplane
 go 1.24.5
 
 require (
+	github.com/charmbracelet/glamour v0.10.0
 	github.com/google/go-github/v74 v74.0.0
 	gitlab.com/gitlab-org/api/client-go v0.137.0
 	golang.org/x/oauth2 v0.30.0
@@ -13,7 +14,6 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
-	github.com/charmbracelet/glamour v0.10.0 // indirect
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
