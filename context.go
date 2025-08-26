@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var llm = os.Getenv("LLM")
@@ -127,6 +128,27 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 	// reading the static prompt template and ensuring it's built
 	staticPrompt := string(staticPromptBytes)
 
+	// inject project knowledge instructions if enabled
+	if cfg.UseProjectKnowledge {
+		knowledgeContent, knowledgeErr := readKnowledgeFile()
+		if knowledgeErr != nil {
+			log.Printf("Warning: Could not read knowledge file: %v", knowledgeErr)
+			knowledgeContent = "No existing project knowledge found."
+		}
+		
+		knowledgeSection := fmt.Sprintf(`
+
+--- PROJECT KNOWLEDGE ---
+%s
+
+IMPORTANT: This project maintains a living knowledge base at .xplane/KNOWLEDGE.md. 
+If this session reveals significant insights, architectural decisions, or important changes, 
+please include a 'KNOWLEDGE UPDATE' section in your response with updated content 
+that should replace the current project knowledge. Keep it concise but comprehensive.`, knowledgeContent)
+		
+		staticPrompt = staticPrompt + knowledgeSection
+	}
+
 	finalPrompt := strings.ReplaceAll(staticPrompt, "{{CURRENT_CONTEXT}}", fetchedDynamicContext)
 	finalPrompt = strings.ReplaceAll(finalPrompt, "{{PREVIOUS_CONTEXT}}", string(previousDynamicContext))
 
@@ -135,6 +157,17 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 	if err != nil {
 		fmt.Printf("⚠️ xplane: Could not generate summary: %v\n", err)
 	} else {
+		// handle knowledge updates if enabled
+		if cfg.UseProjectKnowledge {
+			if updatedKnowledge := extractKnowledgeUpdate(summary); updatedKnowledge != "" {
+				if err := writeKnowledgeFile(updatedKnowledge); err != nil {
+					log.Printf("Warning: Could not update knowledge file: %v", err)
+				} else {
+					fmt.Println(MsgKnowledgeUpdated)
+				}
+			}
+		}
+		
 		renderedSummary, renderErr := renderMarkdown(summary)
 		if renderErr != nil {
 			// fallback to printing
@@ -144,4 +177,90 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 			fmt.Println(renderedSummary)
 		}
 	}
+}
+
+// readKnowledgeFile reads the project knowledge file content
+func readKnowledgeFile() (string, error) {
+	knowledgePath, err := getKnowledgeFilePath()
+	if err != nil {
+		return "", err
+	}
+	
+	content, err := os.ReadFile(knowledgePath)
+	if os.IsNotExist(err) {
+		// Initialize empty knowledge file on first run
+		initialContent := "*This file will be automatically updated with project insights and important context.*"
+		if err := writeKnowledgeFile(initialContent); err != nil {
+			return "", fmt.Errorf("failed to initialize knowledge file: %v", err)
+		}
+		fmt.Println(MsgKnowledgeInitialized)
+		// Return the timestamped content that was actually written
+		return fmt.Sprintf("# Project Knowledge\n\n*Last updated: %s*\n\n%s", time.Now().Format("2006-01-02 15:04:05"), initialContent), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	
+	return string(content), nil
+}
+
+// writeKnowledgeFile writes content to the project knowledge file with timestamp
+func writeKnowledgeFile(content string) error {
+	knowledgePath, err := getKnowledgeFilePath()
+	if err != nil {
+		return err
+	}
+	
+	// Add timestamp header to the knowledge content
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	timestampedContent := fmt.Sprintf("# Project Knowledge\n\n*Last updated: %s*\n\n%s", timestamp, content)
+	
+	return os.WriteFile(knowledgePath, []byte(timestampedContent), 0644)
+}
+
+// extractKnowledgeUpdate extracts knowledge update from LLM response
+func extractKnowledgeUpdate(response string) string {
+	lines := strings.Split(response, "\n")
+	var inKnowledgeSection bool
+	var knowledgeLines []string
+	
+	for i, line := range lines {
+		// Look for the KNOWLEDGE UPDATE header
+		if strings.Contains(strings.ToUpper(line), "KNOWLEDGE UPDATE") {
+			inKnowledgeSection = true
+			continue
+		}
+		
+		if inKnowledgeSection {
+			// Skip empty lines immediately after the header until we find content
+			if len(knowledgeLines) == 0 && strings.TrimSpace(line) == "" {
+				continue
+			}
+			
+			// Stop when we hit certain boundary markers that indicate end of knowledge section
+			if strings.TrimSpace(line) == "--------" || 
+			   (strings.Contains(strings.ToUpper(line), "UNCERTAINTY MAP") && len(knowledgeLines) > 0) {
+				break
+			}
+			
+			// Add the line to knowledge content
+			knowledgeLines = append(knowledgeLines, line)
+			
+			// If this is the last line of the response, we're done
+			if i == len(lines)-1 {
+				break
+			}
+		}
+	}
+	
+	if len(knowledgeLines) == 0 {
+		return ""
+	}
+	
+	// Clean up trailing empty lines
+	for len(knowledgeLines) > 0 && strings.TrimSpace(knowledgeLines[len(knowledgeLines)-1]) == "" {
+		knowledgeLines = knowledgeLines[:len(knowledgeLines)-1]
+	}
+	
+	return strings.TrimSpace(strings.Join(knowledgeLines, "\n"))
 }

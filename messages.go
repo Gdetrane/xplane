@@ -13,6 +13,8 @@ const (
 	MsgFetchingGithubRemoteInfo = "    - \uF09B     Fetching info from GitHub: %s"
 	MsgFetchingGitlabRemoteInfo = "    - \ue65c     Fetching info from GitLab: %s"
 	MsgAnalyzingContext         = "\uee0d  xplane: Context has changed, analyzing with %s provider using '%s'...\n\n\n"
+	MsgKnowledgeInitialized     = "\ue28c Initialized project knowledge file at .xplane/KNOWLEDGE.md"
+	MsgKnowledgeUpdated         = "\ue28c  Project knowledge updated."
 )
 
 func buildRemoteInfoMsg(providerName string, commandName string) string {
