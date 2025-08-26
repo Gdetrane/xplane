@@ -1,5 +1,7 @@
 # xplane ✈️
 
+![xplane demo](assets/xplane.png)
+
 A smart project assistant for your shell, designed to give you an intelligent summary of your project's status every time you `cd` into it.
 
 ---
@@ -74,6 +76,7 @@ After setting up your `.envrc`, run `direnv allow` to approve it.
 | **`GITHUB_TOKEN`** | A Personal Access Token with `repo` scope (read only recommended), required for the `github_prs` command. | (none) |
 | **`GITLAB_TOKEN`** | A Personal Access Token, required for the `gitlab_mrs` command (when implemented). | (none) |
 | **`XPLANE_OLLAMA_SERVER_ADDRESS`** | The server address for Ollama when using the `ollama` provider. | `http://localhost:11434` |
+| **`USE_PROJECT_KNOWLEDGE`** | Enable persistent project knowledge management across sessions. Set to `"true"` to activate. | `false` |
 
 #### Example `.envrc`
 
@@ -101,12 +104,21 @@ export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxx"
 # For Gemini API provider (if using XPLANE_PROVIDER="gemini")
 # export XPLANE_API_KEY="your_gemini_api_key_here"
 
+# Enable persistent project knowledge (optional)
+# export USE_PROJECT_KNOWLEDGE="true"
+
 # Run xplane
 xplane
 ```
 
 
 The first time you run `xplane` in a project, it will automatically create a `.xplane/static_context.txt` file. You can edit this file to customize the persona and instructions for the LLM.
+
+### Project Knowledge Management
+
+When `USE_PROJECT_KNOWLEDGE="true"` is enabled, `xplane` maintains persistent project knowledge across sessions. The LLM can update and reference accumulated insights about your project stored in `.xplane/KNOWLEDGE.md`. This transforms `xplane` from a stateless diff tool into an intelligent project companion that builds institutional knowledge over time.
+
+The knowledge file is automatically created on first run and includes timestamps for all updates. The LLM can add insights via "KNOWLEDGE UPDATE" sections in its responses, creating a feedback loop of learning about your project's patterns, architecture, and development history.
 
 ---
 
@@ -149,6 +161,7 @@ You can also add custom generic commands by including them in `XPLANE_COMMANDS`.
 - [x] Implement `claude_code` provider
 - [x] Add more built-in context commands (`git_diff`, `git_exclude`, `gitignore`, `git_branch_status`, `release`)
 - [x] Implement fancy output formatting
+- [x] Add persistent project knowledge management system
 - [ ] Add more methods to `GitProvider`
 - [ ] Implement `gitlab` and eventually more niche providers like `gitea` or `codeberg`
 - [ ] Add configuration validation and better error messages

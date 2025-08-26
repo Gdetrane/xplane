@@ -32,6 +32,7 @@ type Config struct {
 	APIKey              string
 	Model               string
 	OllamaServerAddress string
+	UseProjectKnowledge bool
 }
 
 func ensureBinaryInstalled(bin string) error {
@@ -55,6 +56,7 @@ func loadConfig() (*Config, error) {
 		APIKey:              os.Getenv("XPLANE_API_KEY"),
 		Model:               os.Getenv("XPLANE_MODEL"),
 		OllamaServerAddress: os.Getenv("OLLAMA_HOST"),
+		UseProjectKnowledge: os.Getenv("USE_PROJECT_KNOWLEDGE") == "true",
 	}
 
 	if cfg.Provider == "" {
