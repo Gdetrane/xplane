@@ -69,7 +69,6 @@ func (c *ClaudeCode) getName() string {
 	return "Claude Code"
 }
 
-
 func (c *ClaudeCode) summarizeContext(finalPrompt string) (string, error) {
 	args := []string{"--print", "--model", c.model}
 	cmd := exec.Command("claude", args...)
@@ -94,7 +93,6 @@ type GeminiCli struct {
 func (g *GeminiCli) getName() string {
 	return "Gemini CLI"
 }
-
 
 func (g *GeminiCli) summarizeContext(finalPrompt string) (string, error) {
 	args := []string{"-y", "-m", g.model} // see gemini --help
@@ -122,7 +120,6 @@ type Gemini struct {
 func (g *Gemini) getName() string {
 	return "Gemini"
 }
-
 
 func (g *Gemini) summarizeContext(finalPrompt string) (string, error) {
 	return "Summary from Gemini (not the same as Gemini CLI!) not implemented yet", nil
@@ -154,7 +151,6 @@ type Ollama struct {
 func (o *Ollama) getName() string {
 	return "Ollama"
 }
-
 
 func (o *Ollama) checkModelAvailability() (bool, error) {
 	apiEndpoint := o.serverAddress + "/api/tags"
