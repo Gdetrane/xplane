@@ -195,15 +195,15 @@ func getGitDiff(gitRoot string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Add timestamp and explanatory context to help LLMs understand
 	// that this shows uncommitted changes (static until committed)
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	header := fmt.Sprintf("Git diff captured at %s - Shows uncommitted changes (remains static until committed):\n\n", timestamp)
-	
+
 	if diff == "" {
 		return header + "No uncommitted changes found.", nil
 	}
-	
+
 	return header + diff, nil
 }

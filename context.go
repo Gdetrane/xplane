@@ -135,17 +135,36 @@ func contextCompare(llm LLMProvider, cfg *Config, gitRoot string) {
 			log.Printf("Warning: Could not read knowledge file: %v", knowledgeErr)
 			knowledgeContent = "No existing project knowledge found."
 		}
-		
+
 		knowledgeSection := fmt.Sprintf(`
 
 --- PROJECT KNOWLEDGE ---
 %s
 
-IMPORTANT: This project maintains a living knowledge base at .xplane/KNOWLEDGE.md. 
-If this session reveals significant insights, architectural decisions, or important changes, 
-please include a 'KNOWLEDGE UPDATE' section in your response with updated content 
-that should replace the current project knowledge. Keep it concise but comprehensive.`, knowledgeContent)
-		
+CRITICAL KNOWLEDGE MANAGEMENT INSTRUCTIONS:
+This project maintains a living knowledge base at .xplane/KNOWLEDGE.md that must grow over time.
+
+Current knowledge above represents the institutional memory of this project. Your task is to:
+
+1. READ the existing knowledge carefully - it contains important context about the project's evolution
+2. ANALYZE the current changes in relation to this existing knowledge
+3. If this session reveals any of the following, you MUST include a 'KNOWLEDGE UPDATE' section:
+   - New architectural decisions or technology stack changes
+   - Important bug fixes or patterns discovered
+   - Significant feature additions or modifications
+   - Development workflow changes
+   - Dependencies or configuration changes
+   - Any insights that would help future development sessions
+
+KNOWLEDGE UPDATE format:
+- Include a 'KNOWLEDGE UPDATE' section in your response containing ONLY NEW insights
+- Focus on what's NEW or CHANGED since the last session
+- DO NOT repeat existing knowledge - the system will preserve it automatically
+- Organize new insights by: Architecture, Recent Changes, Important Patterns, Development Notes
+- Be comprehensive about NEW information that would help future development sessions
+
+Your KNOWLEDGE UPDATE should contain only fresh insights - existing knowledge will be preserved automatically in a timeline format.`, knowledgeContent)
+
 		staticPrompt = staticPrompt + knowledgeSection
 	}
 
@@ -167,7 +186,7 @@ that should replace the current project knowledge. Keep it concise but comprehen
 				}
 			}
 		}
-		
+
 		renderedSummary, renderErr := renderMarkdown(summary)
 		if renderErr != nil {
 			// fallback to printing
@@ -185,7 +204,7 @@ func readKnowledgeFile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	content, err := os.ReadFile(knowledgePath)
 	if os.IsNotExist(err) {
 		// Initialize empty knowledge file on first run
@@ -200,22 +219,44 @@ func readKnowledgeFile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	return string(content), nil
 }
 
-// writeKnowledgeFile writes content to the project knowledge file with timestamp
-func writeKnowledgeFile(content string) error {
+// writeKnowledgeFile prepends new content to the project knowledge file with timestamp
+func writeKnowledgeFile(newContent string) error {
 	knowledgePath, err := getKnowledgeFilePath()
 	if err != nil {
 		return err
 	}
-	
-	// Add timestamp header to the knowledge content
+
+	// Read existing content if file exists
+	var existingContent string
+	if existingData, err := os.ReadFile(knowledgePath); err == nil {
+		existingContent = string(existingData)
+		// Remove the header and last updated line from existing content for clean prepending
+		lines := strings.Split(existingContent, "\n")
+		if len(lines) >= 3 && strings.HasPrefix(lines[0], "# Project Knowledge") {
+			// Skip header (line 0), empty line (line 1), and last updated line (line 2)
+			existingContent = strings.Join(lines[3:], "\n")
+			existingContent = strings.TrimSpace(existingContent)
+		}
+	}
+
+	// Create the new timestamped entry
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	timestampedContent := fmt.Sprintf("# Project Knowledge\n\n*Last updated: %s*\n\n%s", timestamp, content)
-	
-	return os.WriteFile(knowledgePath, []byte(timestampedContent), 0644)
+	var finalContent string
+
+	if existingContent == "" || existingContent == "*This file will be automatically updated with project insights and important context.*" {
+		// First real content - no existing knowledge to preserve
+		finalContent = fmt.Sprintf("# Project Knowledge\n\n*Last updated: %s*\n\n%s", timestamp, newContent)
+	} else {
+		// Prepend new content to existing content
+		finalContent = fmt.Sprintf("# Project Knowledge\n\n*Last updated: %s*\n\n## Latest Update (%s)\n\n%s\n\n---\n\n## Previous Knowledge\n\n%s", 
+			timestamp, timestamp, newContent, existingContent)
+	}
+
+	return os.WriteFile(knowledgePath, []byte(finalContent), 0644)
 }
 
 // extractKnowledgeUpdate extracts knowledge update from LLM response
@@ -223,44 +264,59 @@ func extractKnowledgeUpdate(response string) string {
 	lines := strings.Split(response, "\n")
 	var inKnowledgeSection bool
 	var knowledgeLines []string
-	
+	var foundHeader bool
+
 	for i, line := range lines {
-		// Look for the KNOWLEDGE UPDATE header
-		if strings.Contains(strings.ToUpper(line), "KNOWLEDGE UPDATE") {
+		// Look for the KNOWLEDGE UPDATE header (various formats)
+		if !foundHeader && (strings.Contains(strings.ToUpper(line), "KNOWLEDGE UPDATE") ||
+			strings.Contains(strings.ToUpper(line), "## KNOWLEDGE UPDATE") ||
+			strings.Contains(strings.ToUpper(line), "### KNOWLEDGE UPDATE")) {
 			inKnowledgeSection = true
+			foundHeader = true
 			continue
 		}
-		
+
 		if inKnowledgeSection {
 			// Skip empty lines immediately after the header until we find content
 			if len(knowledgeLines) == 0 && strings.TrimSpace(line) == "" {
 				continue
 			}
-			
-			// Stop when we hit certain boundary markers that indicate end of knowledge section
-			if strings.TrimSpace(line) == "--------" || 
-			   (strings.Contains(strings.ToUpper(line), "UNCERTAINTY MAP") && len(knowledgeLines) > 0) {
+
+			// More conservative stopping conditions - only stop on clear section boundaries
+			trimmedLine := strings.TrimSpace(line)
+			if (strings.Contains(strings.ToUpper(line), "UNCERTAINTY MAP") && len(knowledgeLines) > 0) ||
+				(strings.HasPrefix(trimmedLine, "## ") && !strings.Contains(strings.ToUpper(trimmedLine), "KNOWLEDGE") && len(knowledgeLines) > 3) ||
+				(strings.HasPrefix(trimmedLine, "# ") && !strings.Contains(strings.ToUpper(trimmedLine), "KNOWLEDGE") && len(knowledgeLines) > 3) {
 				break
 			}
-			
+
 			// Add the line to knowledge content
 			knowledgeLines = append(knowledgeLines, line)
-			
+
 			// If this is the last line of the response, we're done
 			if i == len(lines)-1 {
 				break
 			}
 		}
 	}
-	
+
 	if len(knowledgeLines) == 0 {
 		return ""
 	}
-	
+
 	// Clean up trailing empty lines
 	for len(knowledgeLines) > 0 && strings.TrimSpace(knowledgeLines[len(knowledgeLines)-1]) == "" {
 		knowledgeLines = knowledgeLines[:len(knowledgeLines)-1]
 	}
-	
-	return strings.TrimSpace(strings.Join(knowledgeLines, "\n"))
+
+	result := strings.TrimSpace(strings.Join(knowledgeLines, "\n"))
+
+	// Safeguard: if the extracted knowledge is suspiciously short (less than 50 chars),
+	// it's probably incomplete - don't update
+	if len(result) < 50 {
+		log.Printf("Warning: Knowledge update too short (%d chars), skipping to prevent data loss", len(result))
+		return ""
+	}
+
+	return result
 }

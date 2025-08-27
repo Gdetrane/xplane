@@ -114,11 +114,42 @@ xplane
 
 The first time you run `xplane` in a project, it will automatically create a `.xplane/static_context.txt` file. You can edit this file to customize the persona and instructions for the LLM.
 
-### Project Knowledge Management
+### 🧠 Project Knowledge Management
 
-When `USE_PROJECT_KNOWLEDGE="true"` is enabled, `xplane` maintains persistent project knowledge across sessions. The LLM can update and reference accumulated insights about your project stored in `.xplane/KNOWLEDGE.md`. This transforms `xplane` from a stateless diff tool into an intelligent project companion that builds institutional knowledge over time.
+**Transform xplane into an intelligent project companion** by enabling persistent knowledge accumulation with `USE_PROJECT_KNOWLEDGE="true"`. This powerful feature maintains a living timeline of your project's evolution in `.xplane/KNOWLEDGE.md`.
 
-The knowledge file is automatically created on first run and includes timestamps for all updates. The LLM can add insights via "KNOWLEDGE UPDATE" sections in its responses, creating a feedback loop of learning about your project's patterns, architecture, and development history.
+#### How Knowledge Management Works
+- **Automatic Timeline Creation**: Each xplane run that detects significant changes generates timestamped knowledge updates
+- **Timeline-Based Accumulation**: New insights are prepended to preserve development history chronologically
+- **Intelligent Triggers**: Knowledge updates are created for architectural changes, new features, bug fixes, dependency updates, and workflow changes
+- **Context-Aware Learning**: The LLM references existing knowledge to provide increasingly informed analysis
+
+#### Key Benefits
+- **📚 Institutional Memory**: Preserve critical lessons learned, architectural decisions, and development patterns
+- **🔄 Continuous Learning**: Each development session builds upon previous insights
+- **⏰ Development Timeline**: Clear chronological record of project evolution
+- **🎯 Context-Rich Analysis**: Future summaries become more relevant as knowledge accumulates
+- **🏗️ Architecture Documentation**: Automatic capture of stack changes, migrations, and technical decisions
+
+#### Example Knowledge Capture
+```markdown
+## Latest Update (2025-08-27 20:25:35)
+
+### Architecture
+- **Full-Stack Implementation**: Complete transition to Go backend + SQLite
+- **Theme System Architecture**: Advanced theming with 12 predefined themes
+
+### Important Patterns  
+- **sqlc Code Generation**: Type-safe database operations
+- **Theme Composable Pattern**: Vue 3 composable with localStorage persistence
+
+---
+
+## Previous Knowledge
+[Historical development insights preserved...]
+```
+
+The knowledge system automatically initializes on first run and requires no manual maintenance - simply develop your project and watch xplane build comprehensive institutional knowledge over time.
 
 ---
 
