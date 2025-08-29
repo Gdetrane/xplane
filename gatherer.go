@@ -108,12 +108,12 @@ func (cg *ContextGatherer) getGitBranchStatus() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	forkOwner, err := getForkOwner(cg.gitRoot)
+	originOwner, err := getOriginOwner(cg.gitRoot)
 	if err != nil {
 		return "", err
 	}
 
-	existsOnFork, err := cg.gitProvider.BranchExistsOnRemoteOrigin(forkOwner, repoName, localBranch)
+	existsOnFork, err := cg.gitProvider.BranchExistsOnRemoteOrigin(originOwner, repoName, localBranch)
 	if err != nil {
 		return "", err
 	}
@@ -132,7 +132,7 @@ func (cg *ContextGatherer) getGitBranchStatus() (string, error) {
 		return "", err
 	}
 
-	branchComparison, err := cg.gitProvider.CompareBranchWithDefault(owner, repo, forkOwner, localBranch)
+	branchComparison, err := cg.gitProvider.CompareBranchWithDefault(owner, repo, originOwner, localBranch)
 	if err != nil {
 		return "", err
 	}
