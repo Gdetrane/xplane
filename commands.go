@@ -65,10 +65,10 @@ func getHostFromURL(url string) (string, error) {
 	return host, nil
 }
 
-func getForkOwner(gitRoot string) (string, error) {
+func getOriginOwner(gitRoot string) (string, error) {
 	originURL, err := runCommand(gitRoot, "git", "remote", "get-url", "origin")
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve origin remote URL to determine fork owner: %w", err)
+		return "", fmt.Errorf("failed to retrieve origin remote URL to determine origin owner: %w", err)
 	}
 
 	originURL = strings.TrimSpace(originURL)

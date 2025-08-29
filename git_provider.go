@@ -51,7 +51,7 @@ type GitProvider interface {
 	BranchExistsOnRemoteOrigin(owner, repo, branchName string) (bool, error)
 	GetOpenPullRequests(owner, repo string) ([]PullRequest, error)
 	GetLatestRelease(owner, repo string) (Release, error)
-	CompareBranchWithDefault(owner, repo, forkOwner, localBranch string) (BranchComparison, error)
+	CompareBranchWithDefault(owner, repo, originOwner, localBranch string) (BranchComparison, error)
 }
 
 type GithubProvider struct {
@@ -120,7 +120,7 @@ func (g *GithubProvider) GetLatestRelease(owner, repo string) (Release, error) {
 	}, nil
 }
 
-func (g *GithubProvider) CompareBranchWithDefault(owner, repo, forkOwner, localBranch string) (BranchComparison, error) {
+func (g *GithubProvider) CompareBranchWithDefault(owner, repo, originOwner, localBranch string) (BranchComparison, error) {
 	// finding repo's default branch
 	repoInfo, _, err := g.client.Repositories.Get(context.Background(), owner, repo)
 	if err != nil {
@@ -129,13 +129,13 @@ func (g *GithubProvider) CompareBranchWithDefault(owner, repo, forkOwner, localB
 	defaultBranch := repoInfo.GetDefaultBranch()
 
 	// obv not comparing to itself
-	if localBranch == defaultBranch && owner == forkOwner {
+	if localBranch == defaultBranch && owner == originOwner {
 		return BranchComparison{Status: "identical"}, nil
 	}
 
 	// using format "owner:branch"
 	baseRef := defaultBranch
-	headRef := fmt.Sprintf("%s:%s", forkOwner, localBranch)
+	headRef := fmt.Sprintf("%s:%s", originOwner, localBranch)
 
 	// comparing the HEAD of local branch and default branch
 	comparison, _, err := g.client.Repositories.CompareCommits(context.Background(), owner, repo, baseRef, headRef, nil)
@@ -263,9 +263,9 @@ func (g *GitlabProvider) getAllCommits(projectID, branchName string) ([]*gitlab.
 	return allCommits, nil
 }
 
-func (g *GitlabProvider) CompareBranchWithDefault(owner, repo, forkOwner, localBranch string) (BranchComparison, error) {
+func (g *GitlabProvider) CompareBranchWithDefault(owner, repo, originOwner, localBranch string) (BranchComparison, error) {
 	upstreamProjectID := fmt.Sprintf("%s/%s", owner, repo)
-	forkProjectID := fmt.Sprintf("%s/%s", forkOwner, repo)
+	forkProjectID := fmt.Sprintf("%s/%s", originOwner, repo)
 
 	project, _, err := g.client.Projects.GetProject(upstreamProjectID, nil)
 	if err != nil {
@@ -273,7 +273,7 @@ func (g *GitlabProvider) CompareBranchWithDefault(owner, repo, forkOwner, localB
 	}
 	defaultBranch := project.DefaultBranch
 
-	if localBranch == defaultBranch && owner == forkOwner {
+	if localBranch == defaultBranch && owner == originOwner {
 		return BranchComparison{Status: "identical"}, nil
 	}
 

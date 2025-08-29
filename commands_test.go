@@ -398,3 +398,30 @@ func TestGetGitDiff(t *testing.T) {
 		})
 	}
 }
+
+func TestGetOriginOwner(t *testing.T) {
+	tests := []struct {
+		name          string
+		gitRoot       string
+		expectedOwner string
+		expectError   bool
+	}{
+		{"current git repo", ".", "Gdetrane", false}, // Should be the origin owner for xplane
+		{"non-git directory", "/tmp", "", true},
+		{"non-existent directory", "/non/existent/path", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner, err := getOriginOwner(tt.gitRoot)
+			
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Empty(t, owner)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedOwner, owner)
+			}
+		})
+	}
+}
