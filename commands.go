@@ -161,8 +161,9 @@ func getReadme(gitRoot string) (string, error) {
 		output = "No README.md file provided in this project."
 	} else if readmeErr != nil {
 		return "", readmeErr
+	} else {
+		output = string(readmeBytes)
 	}
-	output = string(readmeBytes)
 	return output, nil
 }
 
